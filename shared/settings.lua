@@ -17,6 +17,7 @@
     metadata        - Custom data like serial numbers, components (optional)
     license         - Required license to buy (optional)
     grade           - Minimum job rank required (optional)
+	currency        - Use dirty money instead of cash or bank (optinal) - currency = 'black_money'
 ]]
 
 return {
@@ -27,7 +28,7 @@ return {
 		},
 		inventory = {
 			{ name = 'burger', price = 10, category = 'food' },
-			{ name = 'billsondstrawberry', price = 10, category = 'drinks', },
+			{ name = 'billsondstrawberry', price = 10, category = 'drinks' },
 			{ name = 'cola', price = 10, category = 'drinks' },
 			{ name = 'sandwich', price = 15, category = 'food' },
 		},

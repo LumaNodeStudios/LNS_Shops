@@ -368,25 +368,39 @@ const App = () => {
               <p className="modal-subtitle">Select Payment Method</p>
               
               <div className="payment-methods">
-                <button 
-                  className="payment-button card"
-                  onClick={() => completePurchase('bank')}
-                  disabled={playerMoney.bank < getTotalPrice()}
-                >
-                  <CreditCard size={32} />
-                  <span>Bank</span>
-                  <span className="payment-balance">${playerMoney.bank}</span>
-                </button>
-                
-                <button 
-                  className="payment-button cash"
-                  onClick={() => completePurchase('cash')}
-                  disabled={playerMoney.cash < getTotalPrice()}
-                >
-                  <Wallet size={32} />
-                  <span>Cash</span>
-                  <span className="payment-balance">${playerMoney.cash}</span>
-                </button>
+                {cart.length > 0 && cart.some(c => c.currency === 'black_money') ? (
+                  <button 
+                    className="payment-button cash full-width"
+                    onClick={() => completePurchase('black_money')}
+                    disabled={playerMoney.black_money < getTotalPrice()}
+                  >
+                    <Wallet size={32} />
+                    <span>Dirty Money</span>
+                    <span className="payment-balance">${playerMoney.black_money}</span>
+                  </button>
+                ) : (
+                  <>
+                    <button 
+                      className="payment-button card"
+                      onClick={() => completePurchase('bank')}
+                      disabled={playerMoney.bank < getTotalPrice()}
+                    >
+                      <CreditCard size={32} />
+                      <span>Bank</span>
+                      <span className="payment-balance">${playerMoney.bank}</span>
+                    </button>
+                    
+                    <button 
+                      className="payment-button cash"
+                      onClick={() => completePurchase('cash')}
+                      disabled={playerMoney.cash < getTotalPrice()}
+                    >
+                      <Wallet size={32} />
+                      <span>Cash</span>
+                      <span className="payment-balance">${playerMoney.cash}</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -16,6 +16,12 @@ local function getCurrentMoney(source)
     }
 end
 
+local function getPlayerBlackMoney(source)
+    local blackMoneyCount = exports.ox_inventory:Search(source, 'count', 'black_money')
+
+    return blackMoneyCount or 0
+end
+
 local function hasPlayerLicense(source, licenseType)
     local Player = exports.qbx_core:GetPlayer(source)
     if Player and Player.PlayerData.metadata.licences then
@@ -48,7 +54,7 @@ lib.callback.register('LNS_Shops:getShopData', function(source, shopKey)
     if not shop then
         return {
             items = {},
-            money = getCurrentMoney(src),
+            money = { cash = 0, bank = 0, black_money = 0 },
             error = "Invalid shop"
         }
     end
@@ -86,7 +92,7 @@ lib.callback.register('LNS_Shops:getShopData', function(source, shopKey)
             label = getItemLabel(item.name),
             price = item.price,
             category = item.category or 'general',
-            currency = item.currency or 'cash',
+            currency = item.currency,
             locked = isLocked,
             lockReason = lockReason
         })
@@ -94,7 +100,11 @@ lib.callback.register('LNS_Shops:getShopData', function(source, shopKey)
     
     return {
         items = itemsWithLabels,
-        money = getCurrentMoney(src)
+        money = {
+            cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+            bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+            black_money = getPlayerBlackMoney(src)
+        }
     }
 end)
 
@@ -103,16 +113,45 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
     local Player = exports.qbx_core:GetPlayer(src)
 
     if not Player then
-        return false, "Player not found", getCurrentMoney(src)
+        return false, "Player not found", { cash = 0, bank = 0, black_money = 0 }
     end
 
     local shop = Shops[shopKey]
     if not shop then
-        return false, "Invalid shop", getCurrentMoney(src)
+        return false, "Invalid shop", { cash = 0, bank = 0, black_money = 0 }
     end
 
     if not items or type(items) ~= "table" or #items == 0 then
-        return false, "Invalid purchase data", getCurrentMoney(src)
+        return false, "Invalid purchase data", { cash = 0, bank = 0, black_money = 0 }
+    end
+
+    local hasBlackMoney = false
+    local hasRegularMoney = false
+    
+    for _, cartItem in pairs(items) do
+        local shopItem = nil
+        for _, item in pairs(shop.inventory) do
+            if item.name == cartItem.item then
+                shopItem = item
+                break
+            end
+        end
+        
+        if shopItem then
+            if shopItem.currency == 'black_money' then
+                hasBlackMoney = true
+            else
+                hasRegularMoney = true
+            end
+        end
+    end
+
+    if hasBlackMoney and hasRegularMoney then
+        return false, "Cannot mix dirty money items with regular items", {
+            cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+            bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+            black_money = getPlayerBlackMoney(src)
+        }
     end
 
     local validatedItems = {}
@@ -120,15 +159,22 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
 
     for _, cartItem in pairs(items) do
         if not cartItem.item or not cartItem.quantity then
-            return false, "Invalid item data", getCurrentMoney(src)
+            return false, "Invalid item data", {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
 
         if type(cartItem.quantity) ~= "number" or cartItem.quantity <= 0 or cartItem.quantity > 999 then
-            return false, "Invalid quantity", getCurrentMoney(src)
+            return false, "Invalid quantity", {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
 
         local shopItem = nil
-
         for _, item in pairs(shop.inventory) do
             if item.name == cartItem.item then
                 shopItem = item
@@ -137,12 +183,20 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
         end
 
         if not shopItem then
-            return false, "Invalid item in cart: " .. tostring(cartItem.item), getCurrentMoney(src)
+            return false, "Invalid item in cart: " .. tostring(cartItem.item), {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
 
         if shopItem.license then
             if not hasPlayerLicense(src, shopItem.license) then
-                return false, "You don't have the required license for " .. getItemLabel(shopItem.name) .. "!", getCurrentMoney(src)
+                return false, "You don't have the required license for " .. getItemLabel(shopItem.name) .. "!", {
+                    cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                    bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                    black_money = getPlayerBlackMoney(src)
+                }
             end
         end
 
@@ -152,16 +206,24 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
             
             if shop.groups[playerJob] then
                 if playerGrade < shopItem.grade then
-                    return false, "You don't have the required rank for " .. getItemLabel(shopItem.name) .. "!", getCurrentMoney(src)
+                    return false, "You don't have the required rank for " .. getItemLabel(shopItem.name) .. "!", {
+                        cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                        bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                        black_money = getPlayerBlackMoney(src)
+                    }
                 end
             end
         end
 
         local itemTotal = shopItem.price * cartItem.quantity
-        local currency = shopItem.currency or paymentMethod
+        local currency = shopItem.currency == 'black_money' and 'black_money' or paymentMethod
 
-        if currency ~= 'cash' and currency ~= 'bank' then
-            return false, "Invalid currency type", getCurrentMoney(src)
+        if currency ~= 'cash' and currency ~= 'bank' and currency ~= 'black_money' then
+            return false, "Invalid currency type", {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
 
         currencyTotals[currency] = (currencyTotals[currency] or 0) + itemTotal
@@ -182,54 +244,91 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
 
     for _, item in pairs(validatedItems) do
         if not exports.ox_inventory:CanCarryItem(src, item.name, item.quantity, item.metadata) then
-            return false, "You can't carry " .. getItemLabel(item.name) .. "! (Inventory full or too heavy)", getCurrentMoney(src)
+            return false, "You can't carry " .. getItemLabel(item.name) .. "! (Inventory full or too heavy)", {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
     end
 
     for currency, amount in pairs(currencyTotals) do
-        local playerMoney = exports.qbx_core:GetMoney(src, currency) or 0
-        if playerMoney < amount then
-            local label = currency == 'bank' and 'Bank' or 'Cash'
+        local playerMoney
+        if currency == 'black_money' then
+            playerMoney = getPlayerBlackMoney(src)
+        else
+            playerMoney = exports.qbx_core:GetMoney(src, currency) or 0
+        end
 
-            return false, "You don't have enough " .. label .. "! Need $" .. amount .. ", have $" .. playerMoney, getCurrentMoney(src)
+        if playerMoney < amount then
+            local label = currency == 'bank' and 'Bank' or (currency == 'black_money' and 'Dirty Money' or 'Cash')
+            return false, "You don't have enough " .. label .. "! Need $" .. amount .. ", have $" .. playerMoney, {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
     end
 
     local removedCurrencies = {}
     for currency, amount in pairs(currencyTotals) do
-        local removed = Player.Functions.RemoveMoney(currency, amount, "shop-purchase")
+        local removed
+        if currency == 'black_money' then
+            removed = exports.ox_inventory:RemoveItem(src, 'black_money', amount)
+        else
+            removed = Player.Functions.RemoveMoney(currency, amount, "shop-purchase")
+        end
         
         if not removed then
             for refundCurrency, refundAmount in pairs(removedCurrencies) do
-                Player.Functions.AddMoney(refundCurrency, refundAmount, "shop-refund")
+                if refundCurrency == 'black_money' then
+                    exports.ox_inventory:AddItem(src, 'black_money', refundAmount)
+                else
+                    Player.Functions.AddMoney(refundCurrency, refundAmount, "shop-refund")
+                end
             end
 
-            return false, "Transaction failed!", getCurrentMoney(src)
+            return false, "Transaction failed!", {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
         removedCurrencies[currency] = amount
     end
 
     local itemsAdded = {}
-
     for _, item in pairs(validatedItems) do
         local success = exports.ox_inventory:AddItem(src, item.name, item.quantity, item.metadata or {})
         
         if not success then
             for currency, amount in pairs(removedCurrencies) do
-                Player.Functions.AddMoney(currency, amount, "shop-refund")
+                if currency == 'black_money' then
+                    exports.ox_inventory:AddItem(src, 'black_money', amount)
+                else
+                    Player.Functions.AddMoney(currency, amount, "shop-refund")
+                end
             end
 
             for _, added in pairs(itemsAdded) do
                 exports.ox_inventory:RemoveItem(src, added.name, added.quantity)
             end
 
-            return false, "Failed to add " .. getItemLabel(item.name) .. " to inventory! (Full inventory?)", getCurrentMoney(src)
+            return false, "Failed to add " .. getItemLabel(item.name) .. " to inventory! (Full inventory?)", {
+                cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+                bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+                black_money = getPlayerBlackMoney(src)
+            }
         end
 
         itemsAdded[#itemsAdded + 1] = item
     end
 
-    return true, "Purchase successful!", getCurrentMoney(src)
+    return true, "Purchase successful!", {
+        cash = exports.qbx_core:GetMoney(src, 'cash') or 0,
+        bank = exports.qbx_core:GetMoney(src, 'bank') or 0,
+        black_money = getPlayerBlackMoney(src)
+    }
 end)
 
 CreateThread(function()
