@@ -11,6 +11,7 @@ const App = () => {
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [shopItems, setShopItems] = useState([]);
   const [playerMoney, setPlayerMoney] = useState({ cash: 0, bank: 0 });
+  const [customCurrencies, setCustomCurrencies] = useState({});
   const [shopLabel, setShopLabel] = useState('General Store');
   const [theme, setTheme] = useState({
     primary: '#4ade80',
@@ -27,6 +28,7 @@ const App = () => {
         setIsOpen(true);
         setShopItems(data.items || []);
         setPlayerMoney(data.money || { cash: 0, bank: 0 });
+        setCustomCurrencies(data.customCurrencies || {});
         setShopLabel(data.shopLabel || 'General Store');
         setTheme(data.theme || {
           primary: '#4ade80',
@@ -96,6 +98,21 @@ const App = () => {
       return;
     }
 
+    const getItemCurrencyType = (itm) => {
+      if (!itm.currency || itm.currency === 'cash' || itm.currency === 'bank') {
+        return 'standard';
+      }
+      return itm.currency;
+    };
+
+    const itemCurrencyType = getItemCurrencyType(item);
+    const cartCurrencyTypes = new Set(cart.map(c => getItemCurrencyType(c)));
+
+    if (cartCurrencyTypes.size > 0 && !cartCurrencyTypes.has(itemCurrencyType)) {
+      showNotification('Cannot mix different currency types in one purchase', 'error');
+      return;
+    }
+
     const existingItem = cart.find(cartItem => cartItem.item === item.item);
     if (existingItem) {
       setCart(cart.map(cartItem =>
@@ -140,11 +157,19 @@ const App = () => {
 
   const completePurchase = (paymentMethod) => {
     const total = getTotalPrice();
-
-    if (playerMoney[paymentMethod] < total) {
-      const displayName = paymentMethod === 'bank' ? 'Card' : 'Cash';
-      showNotification(`Insufficient funds in ${displayName}`, 'error');
-      return;
+    const isCustomCurrency = customCurrencies[paymentMethod];
+    
+    if (isCustomCurrency) {
+      if (customCurrencies[paymentMethod].count < total) {
+        showNotification(`Insufficient ${customCurrencies[paymentMethod].label}`, 'error');
+        return;
+      }
+    } else {
+      if (playerMoney[paymentMethod] < total) {
+        const displayName = paymentMethod === 'bank' ? 'Card' : 'Cash';
+        showNotification(`Insufficient funds in ${displayName}`, 'error');
+        return;
+      }
     }
 
     fetch(`https://${GetParentResourceName()}/purchaseItems`, {
@@ -157,13 +182,22 @@ const App = () => {
       })
     }).then(resp => resp.json()).then(data => {
       if (data.success) {
-        const displayName = paymentMethod === 'bank' ? 'Card' : 'Cash';
-        showNotification(`Purchase successful! Paid $${total} with ${displayName}`, 'success');
+        let displayMessage;
+        if (isCustomCurrency) {
+          displayMessage = `Purchase successful! Paid ${total} ${customCurrencies[paymentMethod].label}`;
+        } else {
+          const displayName = paymentMethod === 'bank' ? 'Card' : 'Cash';
+          displayMessage = `Purchase successful! Paid $${total} with ${displayName}`;
+        }
+        showNotification(displayMessage, 'success');
         setPlayerMoney(data.money);
+        setCustomCurrencies(data.customCurrencies || {});
         setCart([]);
         setShowCheckoutModal(false);
       } else {
         showNotification(data.message || 'Purchase failed', 'error');
+        if (data.money) setPlayerMoney(data.money);
+        if (data.customCurrencies) setCustomCurrencies(data.customCurrencies);
       }
     });
   };
@@ -247,7 +281,12 @@ const App = () => {
                   <div className="item-icon-fallback" style={{ display: 'none' }}><Package2 /></div>
                 </div>
                 <h3 className="item-name">{item.label}</h3>
-                <div className="item-price">${item.price}</div>
+                <div className="item-price">
+                  {item.currency && item.currency !== 'cash' && item.currency !== 'bank' 
+                    ? `${item.price} ${item.currencyInfo?.label || item.currency}`
+                    : `$${item.price}`
+                  }
+                </div>
                 <button className="add-to-cart-btn">
                   <Plus size={16} />
                   Add to Cart
@@ -292,7 +331,10 @@ const App = () => {
                     <div className="cart-item-info">
                       <div className="cart-item-name">{item.label}</div>
                       <div className="cart-item-price">
-                        ${item.price} × {item.quantity}
+                        {item.currency && item.currency !== 'cash' && item.currency !== 'bank'
+                          ? `${item.price} × ${item.quantity}`
+                          : `$${item.price} × ${item.quantity}`
+                        }
                       </div>
                     </div>
                     <div className="cart-item-controls">
@@ -327,7 +369,10 @@ const App = () => {
               <div className="summary-row total">
                 <span className="summary-label-total">Total</span>
                 <span className="summary-value-total">
-                  ${getTotalPrice()}
+                  {cart.length > 0 && cart[0].currency && cart[0].currency !== 'cash' && cart[0].currency !== 'bank'
+                    ? `${getTotalPrice()} ${cart[0].currencyInfo?.label || cart[0].currency}`
+                    : `$${getTotalPrice()}`
+                  }
                 </span>
               </div>
             </div>
@@ -362,21 +407,26 @@ const App = () => {
             <div className="modal-body">
               <div className="modal-total">
                 <span>Total Amount</span>
-                <span className="modal-total-price">${getTotalPrice()}</span>
+                <span className="modal-total-price">
+                  {cart.length > 0 && cart[0].currency && cart[0].currency !== 'cash' && cart[0].currency !== 'bank'
+                    ? `${getTotalPrice()} ${cart[0].currencyInfo?.label || cart[0].currency}`
+                    : `$${getTotalPrice()}`
+                  }
+                </span>
               </div>
               
               <p className="modal-subtitle">Select Payment Method</p>
               
               <div className="payment-methods">
-                {cart.length > 0 && cart.some(c => c.currency === 'black_money') ? (
+                {cart.length > 0 && cart[0].currency && cart[0].currency !== 'cash' && cart[0].currency !== 'bank' ? (
                   <button 
                     className="payment-button cash full-width"
-                    onClick={() => completePurchase('black_money')}
-                    disabled={playerMoney.black_money < getTotalPrice()}
+                    onClick={() => completePurchase(cart[0].currency)}
+                    disabled={!customCurrencies[cart[0].currency] || customCurrencies[cart[0].currency].count < getTotalPrice()}
                   >
                     <Wallet size={32} />
-                    <span>Dirty Money</span>
-                    <span className="payment-balance">${playerMoney.black_money}</span>
+                    <span>{customCurrencies[cart[0].currency]?.label || cart[0].currency}</span>
+                    <span className="payment-balance">{customCurrencies[cart[0].currency]?.count || 0}</span>
                   </button>
                 ) : (
                   <>

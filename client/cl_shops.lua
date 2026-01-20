@@ -52,6 +52,15 @@ function openShop(shop, shopKey)
     currentShop = shopKey
 
     lib.callback('LNS_Shops:getShopData', false, function(data)
+        if not data then
+            lib.notify({
+                title = 'Shop Error',
+                description = 'Failed to load shop data',
+                type = 'error'
+            })
+            return
+        end
+
         if data.error then
             lib.notify({
                 title = 'Shop Error',
@@ -67,6 +76,7 @@ function openShop(shop, shopKey)
             action = "openShop",
             items = data.items,
             money = data.money,
+            customCurrencies = data.customCurrencies,
             shopKey = shopKey,
             shopLabel = shop.name or "General Store",
             theme = shop.theme or {
