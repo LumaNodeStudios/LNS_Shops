@@ -4,7 +4,7 @@ lua54 'yes'
 
 author 'LumaNode Studios'
 description 'LumaNode Studios - Shopping Script'
-version '1.0.2'
+version '1.0.3'
 repository 'https://github.com/LumaNodeStudios/LNS_Shops'
 
 ui_page 'web/build/index.html'
@@ -13,7 +13,8 @@ ui_page 'web/build/index.html'
 files {
     'web/build/index.html',
     'web/build/*.css',
-    'web/build/*.js'
+    'web/build/*.js',
+    'locales/*.json'
 }
 
 shared_scripts {

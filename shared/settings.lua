@@ -1,6 +1,8 @@
 --[[
     SHOP CONFIGURATION:
 
+	language        - 'en', 'cs', 'de', 'es', 'fr', 'it', 'nl', 'pl', 'pt', 'sv', 'tr'
+
     name            - Shop display name
     blip            - Map blip settings (id, colour, scale)
     groups          - Job restrictions (optional) - ['job_name'] = min_grade
@@ -21,6 +23,7 @@
 ]]
 
 return {
+	Language = 'en',
 	General = {
 		name = 'General Store',
 		blip = {

@@ -1,4 +1,39 @@
 local Shops = lib.load('shared.settings')
+local Translations = {}
+
+local function LoadLocale()
+    local lang = Shops.Language or 'en'
+    local file = LoadResourceFile(GetCurrentResourceName(), 'locales/' .. lang .. '.json')
+    if file then
+        Translations = json.decode(file) or {}
+    else
+        lib.print.error('Failed to load locale: ' .. lang)
+    end
+end
+
+LoadLocale()
+
+local function locale(key, ...)
+    local strings = ... and { ... } or {}
+    local value = Translations
+    
+    for str in string.gmatch(key, "([^.]+)") do
+        if value then
+            value = value[str]
+        else
+            break
+        end
+    end
+
+    if type(value) == 'string' then
+        if #strings > 0 then
+            return string.format(value, table.unpack(strings))
+        end
+        return value
+    end
+    
+    return key
+end
 
 local function getItemLabel(itemName)
     local item = exports.ox_inventory:Items(itemName)
@@ -64,7 +99,7 @@ lib.callback.register('LNS_Shops:getShopData', function(source, shopKey)
             items = {},
             money = { cash = 0, bank = 0 },
             customCurrencies = {},
-            error = "Invalid shop"
+            error = locale('error_invalid_shop')
         }
     end
     
@@ -92,7 +127,7 @@ lib.callback.register('LNS_Shops:getShopData', function(source, shopKey)
         if item.license then
             if not hasPlayerLicense(src, item.license) then
                 isLocked = true
-                lockReason = "Requires " .. item.license .. " license"
+                lockReason = locale('error_requires_license', item.license)
             end
         end
 
@@ -105,7 +140,7 @@ lib.callback.register('LNS_Shops:getShopData', function(source, shopKey)
                 if shop.groups[playerJob] then
                     if playerGrade < item.grade then
                         isLocked = true
-                        lockReason = "Requires grade " .. item.grade
+                        lockReason = locale('error_requires_grade', item.grade)
                     end
                 end
             end
@@ -147,18 +182,18 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
 
     if not Player then
         local customCurrencies = {}
-        return false, "Player not found", { cash = 0, bank = 0 }, customCurrencies
+        return false, locale('error_player_not_found'), { cash = 0, bank = 0 }, customCurrencies
     end
 
     local shop = Shops[shopKey]
     if not shop then
         local customCurrencies = {}
-        return false, "Invalid shop", { cash = 0, bank = 0 }, customCurrencies
+        return false, locale('error_invalid_shop'), { cash = 0, bank = 0 }, customCurrencies
     end
 
     if not items or type(items) ~= "table" or #items == 0 then
         local customCurrencies = {}
-        return false, "Invalid purchase data", { cash = 0, bank = 0 }, customCurrencies
+        return false, locale('error_invalid_purchase_data'), { cash = 0, bank = 0 }, customCurrencies
     end
 
     local function getCustomCurrencies()
@@ -206,7 +241,7 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
     end
 
     if currencyCount > 1 then
-        return false, "Cannot mix different currency types in one purchase", 
+        return false, locale('error_mixed_currency'), 
             { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
             getCustomCurrencies()
     end
@@ -216,13 +251,13 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
 
     for _, cartItem in pairs(items) do
         if not cartItem.item or not cartItem.quantity then
-            return false, "Invalid item data", 
+            return false, locale('error_invalid_item_data'), 
                 { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                 getCustomCurrencies()
         end
 
         if type(cartItem.quantity) ~= "number" or cartItem.quantity <= 0 or cartItem.quantity > 999 then
-            return false, "Invalid quantity", 
+            return false, locale('error_invalid_quantity'), 
                 { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                 getCustomCurrencies()
         end
@@ -236,14 +271,14 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
         end
 
         if not shopItem then
-            return false, "Invalid item in cart: " .. tostring(cartItem.item), 
+            return false, locale('error_invalid_item_cart', tostring(cartItem.item)), 
                 { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                 getCustomCurrencies()
         end
 
         if shopItem.license then
             if not hasPlayerLicense(src, shopItem.license) then
-                return false, "You don't have the required license for " .. getItemLabel(shopItem.name) .. "!", 
+                return false, locale('error_missing_license_item', getItemLabel(shopItem.name)), 
                     { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                     getCustomCurrencies()
             end
@@ -255,7 +290,7 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
             
             if shop.groups[playerJob] then
                 if playerGrade < shopItem.grade then
-                    return false, "You don't have the required rank for " .. getItemLabel(shopItem.name) .. "!", 
+                    return false, locale('error_missing_rank_item', getItemLabel(shopItem.name)), 
                         { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                         getCustomCurrencies()
                 end
@@ -289,7 +324,7 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
 
     for _, item in pairs(validatedItems) do
         if not exports.ox_inventory:CanCarryItem(src, item.name, item.quantity, item.metadata) then
-            return false, "You can't carry " .. getItemLabel(item.name) .. "! (Inventory full or too heavy)", 
+            return false, locale('error_inventory_full', getItemLabel(item.name)), 
                 { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                 getCustomCurrencies()
         end
@@ -308,7 +343,7 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
         end
 
         if playerMoney < amount then
-            return false, "You don't have enough " .. label .. "! Need " .. amount .. ", have " .. playerMoney, 
+            return false, locale('error_insufficient_funds', label, amount, playerMoney), 
                 { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                 getCustomCurrencies()
         end
@@ -333,7 +368,7 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
                 end
             end
 
-            return false, "Transaction failed!", 
+            return false, locale('error_transaction_failed'), 
                 { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                 getCustomCurrencies()
         end
@@ -357,7 +392,7 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
                 exports.ox_inventory:RemoveItem(src, added.name, added.quantity)
             end
 
-            return false, "Failed to add " .. getItemLabel(item.name) .. " to inventory! (Full inventory?)", 
+            return false, locale('error_failed_add_inventory', getItemLabel(item.name)), 
                 { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
                 getCustomCurrencies()
         end
@@ -365,7 +400,7 @@ lib.callback.register('LNS_Shops:purchaseItems', function(source, items, payment
         itemsAdded[#itemsAdded + 1] = item
     end
 
-    return true, "Purchase successful!", 
+    return true, locale('success_purchase'), 
         { cash = exports.qbx_core:GetMoney(src, 'cash') or 0, bank = exports.qbx_core:GetMoney(src, 'bank') or 0 },
         getCustomCurrencies()
 end)

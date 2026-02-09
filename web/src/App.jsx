@@ -2,6 +2,43 @@ import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Package, Package2, X, Trash2, CreditCard, Search, Wallet, Plus, Lock } from 'lucide-react';
 import './App.css';
 
+const defaultLocales = {
+  item_locked: "This item is locked",
+  error_mixed_currency: "Cannot mix different currency types in one purchase",
+  added_another_to_cart: "Added another %s to cart",
+  added_to_cart: "%s added to cart",
+  removed_from_cart: "%s removed from cart",
+  cart_empty: "Your cart is empty",
+  insufficient_custom: "Insufficient %s",
+  insufficient_funds: "Insufficient funds in %s",
+  purchase_success_custom: "Purchase successful! Paid %s %s",
+  purchase_success_standard: "Purchase successful! Paid $%s with %s",
+  purchase_failed: "Purchase failed",
+  category_all: "All Items",
+  search_placeholder: "Search items...",
+  add_to_cart: "Add to Cart",
+  cart_title: "Shopping Cart",
+  cart_item_count: "%s item",
+  cart_items_count: "%s items",
+  cart_click_to_add: "Click items to add to cart",
+  total: "Total",
+  checkout: "Checkout",
+  modal_title: "Complete Purchase",
+  modal_total_amount: "Total Amount",
+  modal_select_payment: "Select Payment Method",
+  payment_bank: "Bank",
+  payment_cash: "Cash",
+  payment_card: "Card"
+};
+
+const formatString = (str, ...args) => {
+  if (!str) return '';
+  return str.replace(/%s/g, () => {
+    const arg = args.shift();
+    return arg !== undefined ? arg : '';
+  });
+};
+
 const App = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
@@ -19,11 +56,12 @@ const App = () => {
     primaryText: '#0f0f10'
   });
   const [categories, setCategories] = useState([]);
+  const [locales, setLocales] = useState(defaultLocales);
 
   useEffect(() => {
     const handleMessage = (event) => {
       const data = event.data;
-      
+
       if (data.action === 'openShop') {
         setIsOpen(true);
         setShopItems(data.items || []);
@@ -35,17 +73,20 @@ const App = () => {
           primaryDark: '#22c55e',
           primaryText: '#0f0f10'
         });
-        
+        if (data.locales) {
+          setLocales({ ...defaultLocales, ...data.locales });
+        }
+
         const uniqueCategories = ['all'];
         const categorySet = new Set();
-        
+
         (data.items || []).forEach(item => {
           if (item.category && !categorySet.has(item.category)) {
             categorySet.add(item.category);
             uniqueCategories.push(item.category);
           }
         });
-        
+
         setCategories(uniqueCategories);
         setCart([]);
         setActiveCategory('all');
@@ -94,7 +135,7 @@ const App = () => {
 
   const addToCart = (item) => {
     if (item.locked) {
-      showNotification(item.lockReason || 'This item is locked', 'error');
+      showNotification(item.lockReason || locales.item_locked, 'error');
       return;
     }
 
@@ -109,7 +150,7 @@ const App = () => {
     const cartCurrencyTypes = new Set(cart.map(c => getItemCurrencyType(c)));
 
     if (cartCurrencyTypes.size > 0 && !cartCurrencyTypes.has(itemCurrencyType)) {
-      showNotification('Cannot mix different currency types in one purchase', 'error');
+      showNotification(locales.error_mixed_currency, 'error');
       return;
     }
 
@@ -120,17 +161,18 @@ const App = () => {
           ? { ...cartItem, quantity: cartItem.quantity + 1 }
           : cartItem
       ));
-      showNotification(`Added another ${item.label} to cart`, 'success');
+
+      showNotification(formatString(locales.added_another_to_cart, item.label), 'success');
     } else {
       setCart([...cart, { ...item, quantity: 1 }]);
-      showNotification(`${item.label} added to cart`, 'success');
+      showNotification(formatString(locales.added_to_cart, item.label), 'success');
     }
   };
 
   const removeFromCart = (itemName) => {
     const item = cart.find(cartItem => cartItem.item === itemName);
     setCart(cart.filter(cartItem => cartItem.item !== itemName));
-    showNotification(`${item.label} removed from cart`, 'info');
+    showNotification(formatString(locales.removed_from_cart, item.label), 'info');
   };
 
   const updateQuantity = (itemName, delta) => {
@@ -149,7 +191,7 @@ const App = () => {
 
   const handleCheckout = () => {
     if (cart.length === 0) {
-      showNotification('Your cart is empty', 'error');
+      showNotification(locales.cart_empty, 'error');
       return;
     }
     setShowCheckoutModal(true);
@@ -158,16 +200,17 @@ const App = () => {
   const completePurchase = (paymentMethod) => {
     const total = getTotalPrice();
     const isCustomCurrency = customCurrencies[paymentMethod];
-    
+
+
     if (isCustomCurrency) {
       if (customCurrencies[paymentMethod].count < total) {
-        showNotification(`Insufficient ${customCurrencies[paymentMethod].label}`, 'error');
+        showNotification(formatString(locales.insufficient_custom, customCurrencies[paymentMethod].label), 'error');
         return;
       }
     } else {
       if (playerMoney[paymentMethod] < total) {
-        const displayName = paymentMethod === 'bank' ? 'Card' : 'Cash';
-        showNotification(`Insufficient funds in ${displayName}`, 'error');
+        const displayName = paymentMethod === 'bank' ? locales.payment_card : locales.payment_cash;
+        showNotification(formatString(locales.insufficient_funds, displayName), 'error');
         return;
       }
     }
@@ -181,13 +224,14 @@ const App = () => {
         paymentMethod: paymentMethod
       })
     }).then(resp => resp.json()).then(data => {
+
       if (data.success) {
         let displayMessage;
         if (isCustomCurrency) {
-          displayMessage = `Purchase successful! Paid ${total} ${customCurrencies[paymentMethod].label}`;
+          displayMessage = formatString(locales.purchase_success_custom, total, customCurrencies[paymentMethod].label);
         } else {
-          const displayName = paymentMethod === 'bank' ? 'Card' : 'Cash';
-          displayMessage = `Purchase successful! Paid $${total} with ${displayName}`;
+          const displayName = paymentMethod === 'bank' ? locales.payment_card : locales.payment_cash;
+          displayMessage = formatString(locales.purchase_success_standard, total, displayName);
         }
         showNotification(displayMessage, 'success');
         setPlayerMoney(data.money);
@@ -195,7 +239,7 @@ const App = () => {
         setCart([]);
         setShowCheckoutModal(false);
       } else {
-        showNotification(data.message || 'Purchase failed', 'error');
+        showNotification(data.message || locales.purchase_failed, 'error');
         if (data.money) setPlayerMoney(data.money);
         if (data.customCurrencies) setCustomCurrencies(data.customCurrencies);
       }
@@ -203,7 +247,7 @@ const App = () => {
   };
 
   const formatCategoryName = (category) => {
-    if (category === 'all') return 'All Items';
+    if (category === 'all') return locales.category_all;
     return category.charAt(0).toUpperCase() + category.slice(1);
   };
 
@@ -248,7 +292,7 @@ const App = () => {
               <Search size={16} className="search-icon" />
               <input
                 type="text"
-                placeholder="Search items..."
+                placeholder={locales.search_placeholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="search-input"
@@ -270,7 +314,7 @@ const App = () => {
                   </div>
                 )}
                 <div className="item-icon">
-                  <img 
+                  <img
                     src={`nui://ox_inventory/web/images/${item.item}.png`}
                     alt={item.label}
                     onError={(e) => {
@@ -282,14 +326,14 @@ const App = () => {
                 </div>
                 <h3 className="item-name">{item.label}</h3>
                 <div className="item-price">
-                  {item.currency && item.currency !== 'cash' && item.currency !== 'bank' 
+                  {item.currency && item.currency !== 'cash' && item.currency !== 'bank'
                     ? `${item.price} ${item.currencyInfo?.label || item.currency}`
                     : `$${item.price}`
                   }
                 </div>
                 <button className="add-to-cart-btn">
                   <Plus size={16} />
-                  Add to Cart
+                  {locales.add_to_cart}
                 </button>
               </div>
             ))}
@@ -300,10 +344,10 @@ const App = () => {
           <div className="cart-header">
             <div className="cart-header-content">
               <ShoppingCart size={24} style={{ color: theme.primary }} />
-              <h2 className="cart-title">Shopping Cart</h2>
+              <h2 className="cart-title">{locales.cart_title}</h2>
             </div>
             <p className="cart-count">
-              {cart.length} {cart.length === 1 ? 'item' : 'items'}
+              {cart.length === 1 ? formatString(locales.cart_item_count, cart.length) : formatString(locales.cart_items_count, cart.length)}
             </p>
           </div>
 
@@ -311,14 +355,14 @@ const App = () => {
             {cart.length === 0 ? (
               <div className="empty-cart">
                 <Package size={48} style={{ opacity: 0.5, marginBottom: '12px' }} />
-                <p>Click items to add to cart</p>
+                <p>{locales.cart_click_to_add}</p>
               </div>
             ) : (
               <div className="cart-items-list">
                 {cart.map((item, index) => (
                   <div key={index} className="cart-item">
                     <div className="cart-item-icon">
-                      <img 
+                      <img
                         src={`nui://ox_inventory/web/images/${item.item}.png`}
                         alt={item.label}
                         onError={(e) => {
@@ -367,7 +411,7 @@ const App = () => {
           <div className="cart-footer">
             <div className="cart-summary">
               <div className="summary-row total">
-                <span className="summary-label-total">Total</span>
+                <span className="summary-label-total">{locales.total}</span>
                 <span className="summary-value-total">
                   {cart.length > 0 && cart[0].currency && cart[0].currency !== 'cash' && cart[0].currency !== 'bank'
                     ? `${getTotalPrice()} ${cart[0].currencyInfo?.label || cart[0].currency}`
@@ -382,7 +426,7 @@ const App = () => {
               disabled={cart.length === 0}
             >
               <ShoppingCart size={16} />
-              Checkout
+              {locales.checkout}
             </button>
           </div>
         </div>
@@ -398,15 +442,15 @@ const App = () => {
         <div className="modal-overlay" onClick={() => setShowCheckoutModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">Complete Purchase</h2>
+              <h2 className="modal-title">{locales.modal_title}</h2>
               <button className="modal-close" onClick={() => setShowCheckoutModal(false)}>
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="modal-total">
-                <span>Total Amount</span>
+                <span>{locales.modal_total_amount}</span>
                 <span className="modal-total-price">
                   {cart.length > 0 && cart[0].currency && cart[0].currency !== 'cash' && cart[0].currency !== 'bank'
                     ? `${getTotalPrice()} ${cart[0].currencyInfo?.label || cart[0].currency}`
@@ -414,12 +458,12 @@ const App = () => {
                   }
                 </span>
               </div>
-              
-              <p className="modal-subtitle">Select Payment Method</p>
-              
+
+              <p className="modal-subtitle">{locales.modal_select_payment}</p>
+
               <div className="payment-methods">
                 {cart.length > 0 && cart[0].currency && cart[0].currency !== 'cash' && cart[0].currency !== 'bank' ? (
-                  <button 
+                  <button
                     className="payment-button cash full-width"
                     onClick={() => completePurchase(cart[0].currency)}
                     disabled={!customCurrencies[cart[0].currency] || customCurrencies[cart[0].currency].count < getTotalPrice()}
@@ -430,23 +474,23 @@ const App = () => {
                   </button>
                 ) : (
                   <>
-                    <button 
+                    <button
                       className="payment-button card"
                       onClick={() => completePurchase('bank')}
                       disabled={playerMoney.bank < getTotalPrice()}
                     >
                       <CreditCard size={32} />
-                      <span>Bank</span>
+                      <span>{locales.payment_bank}</span>
                       <span className="payment-balance">${playerMoney.bank}</span>
                     </button>
-                    
-                    <button 
+
+                    <button
                       className="payment-button cash"
                       onClick={() => completePurchase('cash')}
                       disabled={playerMoney.cash < getTotalPrice()}
                     >
                       <Wallet size={32} />
-                      <span>Cash</span>
+                      <span>{locales.payment_cash}</span>
                       <span className="payment-balance">${playerMoney.cash}</span>
                     </button>
                   </>

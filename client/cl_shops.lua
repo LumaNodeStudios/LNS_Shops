@@ -1,6 +1,46 @@
 local Shops = lib.load('shared.settings')
 local isShopOpen = false
 local currentShop = nil
+local Translations = {}
+
+local function LoadLocale()
+    local lang = Shops.Language or 'en'
+    local file = LoadResourceFile(GetCurrentResourceName(), 'locales/' .. lang .. '.json')
+    if file then
+        Translations = json.decode(file) or {}
+        lib.print.info('Loaded locale: ' .. lang)
+    else
+        lib.print.error('Failed to load locale: ' .. lang)
+    end
+end
+
+LoadLocale()
+
+local function locale(key, ...)
+    local strings = ... and { ... } or {}
+    local value = Translations
+    
+    for str in string.gmatch(key, "([^.]+)") do
+        if value then
+            value = value[str]
+        else
+            break
+        end
+    end
+
+    if type(value) == 'string' then
+        if #strings > 0 then
+            return string.format(value, table.unpack(strings))
+        end
+        return value
+    end
+    
+    return key
+end
+
+local function t(key, ...)
+    return locale('ui.' .. key, ...)
+end
 
 CreateThread(function()
     for shopKey, shop in pairs(Shops) do
@@ -21,7 +61,7 @@ CreateThread(function()
         if shop.targets then
             for i, target in ipairs(shop.targets) do
                 local iconClass = shopKey == 'Ammunation' and 'fas fa-gun' or 'fas fa-shopping-cart'
-                local labelText = 'Open ' .. shop.name
+                local labelText = locale('open_shop_label', shop.name)
                 
                 exports.ox_target:addBoxZone({
                     coords = target.loc,
@@ -54,8 +94,8 @@ function openShop(shop, shopKey)
     lib.callback('LNS_Shops:getShopData', false, function(data)
         if not data then
             lib.notify({
-                title = 'Shop Error',
-                description = 'Failed to load shop data',
+                title = locale('shop_error_title'),
+                description = locale('shop_error_failed_load'),
                 type = 'error'
             })
             return
@@ -63,7 +103,7 @@ function openShop(shop, shopKey)
 
         if data.error then
             lib.notify({
-                title = 'Shop Error',
+                title = locale('shop_error_title'),
                 description = data.error,
                 type = 'error'
             })
@@ -83,6 +123,34 @@ function openShop(shop, shopKey)
                 primary = "#4ade80",
                 primaryDark = "#22c55e",
                 primaryText = "#0f0f10"
+            },
+            locales = {
+                item_locked = t('item_locked'),
+                error_mixed_currency = t('error_mixed_currency'),
+                added_another_to_cart = t('added_another_to_cart'),
+                added_to_cart = t('added_to_cart'),
+                removed_from_cart = t('removed_from_cart'),
+                cart_empty = t('cart_empty'),
+                insufficient_custom = t('insufficient_custom'),
+                insufficient_funds = t('insufficient_funds'),
+                purchase_success_custom = t('purchase_success_custom'),
+                purchase_success_standard = t('purchase_success_standard'),
+                purchase_failed = t('purchase_failed'),
+                category_all = t('category_all'),
+                search_placeholder = t('search_placeholder'),
+                add_to_cart = t('add_to_cart'),
+                cart_title = t('cart_title'),
+                cart_item_count = t('cart_item_count'),
+                cart_items_count = t('cart_items_count'),
+                cart_click_to_add = t('cart_click_to_add'),
+                total = t('total'),
+                checkout = t('checkout'),
+                modal_title = t('modal_title'),
+                modal_total_amount = t('modal_total_amount'),
+                modal_select_payment = t('modal_select_payment'),
+                payment_bank = t('payment_bank'),
+                payment_cash = t('payment_cash'),
+                payment_card = t('payment_card')
             }
         })
     end, shopKey)
@@ -99,7 +167,7 @@ RegisterNUICallback('purchaseItems', function(data, cb)
     if not data or not data.items or not data.paymentMethod then
         cb({
             success = false,
-            message = "Invalid purchase data"
+            message = locale('error_invalid_purchase_data')
         })
         return
     end
